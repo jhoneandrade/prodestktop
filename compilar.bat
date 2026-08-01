@@ -7,7 +7,7 @@ echo Instalando PyInstaller e dependencias (caso nao tenha)...
 pip install pyinstaller Pillow fdb
 
 echo Compilando o executavel...
-pyinstaller --noconfirm --onefile --windowed --icon "logo.ico" --name "ProDesktop_Descanso" --version-file "version_info.txt" --add-data "fbclient.dll;." --add-data "logo_prodesktop.png;." --add-data "logo.ico;." "main.py"
+pyinstaller --noconfirm --onefile --windowed --icon "logo.ico" --name "ProDesktop_Descanso" --version-file "version_info.txt" --add-data "fbclient.dll;." --add-data "logo_prodesktop.png;." --add-data "logo.ico;." --add-data "fundo_moderno.png;." "main.py"
 
 echo ========================================================
 echo COMPILACAO CONCLUIDA!

@@ -26,7 +26,7 @@ def loop_verificacao_redes():
         try:
             socket.create_connection(("8.8.8.8", 53), timeout=2)
             status_int = "Internet: Online "
-            cor_int = "lightgreen"
+            cor_int = "lime"
         except OSError:
             status_int = "Internet: Offline "
             cor_int = "red"
@@ -37,7 +37,7 @@ def loop_verificacao_redes():
         
         if resultado.returncode == 0:
             status_srv = f"{texto_caixa} | Servidor {ip_servidor}: Conectado "
-            cor_srv = "lightgreen"
+            cor_srv = "lime"
         else:
             status_srv = f"{texto_caixa} | Servidor {ip_servidor}: Sem Comunicação "
             cor_srv = "red"

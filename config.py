@@ -16,7 +16,7 @@ def criar_ini_padrao(caminho):
     config['SISTEMA'] = {
         'pdv': '1',
         'nome_loja': 'GANSO SISTEMAS PDV',
-        'imagem_fundo': '',
+        'imagem_fundo': 'fundo_moderno.png',
         'caminho_pdv': r'C:\GansoPDV\PDV.exe',
         'ativar_repouso': '900',
         'caminho_banco': r'C:\GansoPDV\GansoPDV.IB',

@@ -113,7 +113,7 @@ def verificar_status_caixa():
             
     except Exception as e:
         print(f"[BANCO ERRO] Falha ao verificar status: {e}")
-        return {"status": "F", "usuario": ""}
+        return {"status": "ERRO", "usuario": ""}
     finally:
         if 'con' in locals():
             con.close()
