@@ -178,20 +178,47 @@ ponteiro_m = canvas.create_line(px(cx), py(cy), px(cx), py(cy), fill="#FF6600", 
 ponteiro_s = canvas.create_line(px(cx), py(cy), px(cx), py(cy), fill="#FF6600", width=1.5, capstyle="round")
 
 # --- FUNÇÕES AUXILIARES PARA FUNDOS NATIVOS COM GLOW ---
-def gerar_caixa_status(largura, altura, cor_hex, raio=15):
-    img = Image.new('RGBA', (int(largura), int(altura)), (0, 0, 0, 0))
-    cor_fundo = (22, 22, 24, 255)  # Fundo principal
-    cor_borda = (51, 51, 51, 255)
+def aplicar_efeito_vidro(largura, altura, x, y):
+    global fundo_pil_global
+    if 'fundo_pil_global' not in globals() or fundo_pil_global is None:
+        # Fallback
+        return Image.new('RGBA', (int(largura), int(altura)), (255, 255, 255, 150))
     
-    # Desenhar caixa base
-    draw = ImageDraw.Draw(img)
-    draw.rounded_rectangle([(0, 0), (int(largura)-1, int(altura)-1)], radius=int(raio), fill=cor_fundo, outline=cor_borda, width=1)
-def gerar_caixa_status(largura, altura, cor_glow):
-    img = Image.new('RGBA', (int(largura), int(altura)), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    cor_fundo = (22, 22, 24, 255)
+    # 1. Crop do fundo (onde a caixa vai ficar)
+    crop = fundo_pil_global.crop((int(x), int(y), int(x + largura), int(y + altura)))
     
-    # Glow map (simples)
+    # 2. Desfoque intenso (Estilo iOS)
+    blur = crop.filter(ImageFilter.GaussianBlur(35)).convert("RGBA")
+    
+    # Aumentar um pouco o brilho do fundo desfocado para dar aquele ar premium claro
+    from PIL import ImageEnhance
+    enhancer = ImageEnhance.Brightness(blur)
+    blur = enhancer.enhance(1.1)
+    
+    # 3. Tint esbranquiçado (Gelo) em vez de smoke escuro, para bater com a imagem de referência
+    tint = Image.new('RGBA', blur.size, (255, 255, 255, 60))
+    glass = Image.alpha_composite(blur, tint)
+    return glass
+
+def gerar_caixa_status(largura, altura, cor_glow, x=0, y=0):
+    # Valores padrões para a primeira criação (antes das resoluções)
+    if x == 0: x = px(1400)
+    if y == 0: y = py(180)
+    
+    img = aplicar_efeito_vidro(largura, altura, x, y)
+    
+    mask = Image.new('L', img.size, 0)
+    draw_mask = ImageDraw.Draw(mask)
+    draw_mask.rounded_rectangle([(0, 0), (int(largura)-1, int(altura)-1)], radius=15, fill=255)
+    img.putalpha(mask)
+    
+    border = Image.new('RGBA', img.size, (0, 0, 0, 0))
+    draw_border = ImageDraw.Draw(border)
+    draw_border.rounded_rectangle([(0, 0), (int(largura)-1, int(altura)-1)], radius=15, outline=(255, 255, 255, 130), width=2)
+    img = Image.alpha_composite(img, border)
+    
+    draw = ImageDraw.Draw(img)
+    
     glow_colors = {
         "red": (255, 0, 0, 255),
         "green": (0, 255, 0, 255),
@@ -200,40 +227,43 @@ def gerar_caixa_status(largura, altura, cor_glow):
     }
     r, g, b, a = glow_colors.get(cor_glow, (100, 100, 100, 255))
     
-    # Caixa base
-    draw.rounded_rectangle([(0, 0), (int(largura)-1, int(altura)-1)], radius=15, fill=cor_fundo)
-    
-    # Linha inferior (Accent)
     linha_y = int(altura) - 10
     margin = 50
     draw.line([(margin, linha_y), (int(largura)-margin, linha_y)], fill=(r, g, b, 255), width=3)
     
-    # Centro do cadeado (relativo à caixa)
     cx = int(largura * (90/500))
     cy = int(altura * (110/200))
     
-    # Desenhar o círculo fino em volta do cadeado (sem sombra)
     raio_linha = int(altura * 0.35)
     draw.ellipse([(cx - raio_linha, cy - raio_linha), (cx + raio_linha, cy + raio_linha)], outline=(r, g, b, 150), width=2)
     
     return ImageTk.PhotoImage(img)
 
-def gerar_caixa_consulta(largura, altura, raio=15):
-    img = Image.new('RGBA', (int(largura), int(altura)), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    cor_fundo = (22, 22, 24, 255)
-    cor_borda = (51, 51, 51, 255)
-    draw.rounded_rectangle([(0, 0), (int(largura)-1, int(altura)-1)], radius=int(raio), fill=cor_fundo, outline=cor_borda, width=1)
+def gerar_caixa_consulta(largura, altura, raio=15, x=0, y=0):
+    if x == 0: x = px(1400)
+    if y == 0: y = py(570)
     
-    # Caixa interna da busca (onde fica o Entry)
+    img = aplicar_efeito_vidro(largura, altura, x, y)
+    
+    mask = Image.new('L', img.size, 0)
+    draw_mask = ImageDraw.Draw(mask)
+    draw_mask.rounded_rectangle([(0, 0), (int(largura)-1, int(altura)-1)], radius=int(raio), fill=255)
+    img.putalpha(mask)
+    
+    border = Image.new('RGBA', img.size, (0, 0, 0, 0))
+    draw_border = ImageDraw.Draw(border)
+    draw_border.rounded_rectangle([(0, 0), (int(largura)-1, int(altura)-1)], radius=int(raio), outline=(255, 255, 255, 130), width=2)
+    img = Image.alpha_composite(img, border)
+    
+    draw = ImageDraw.Draw(img)
+    
     iy1 = int(altura * (135/240))
     iy2 = int(altura * (195/240))
     ix1 = int(largura * (20/500))
     ix2 = int(largura * (480/500))
     
-    draw.rounded_rectangle([(ix1, iy1), (ix2, iy2)], radius=10, fill=(17, 17, 17, 255), outline=cor_borda, width=1)
+    draw.rounded_rectangle([(ix1, iy1), (ix2, iy2)], radius=10, fill=(0, 0, 0, 60), outline=(255, 255, 255, 60), width=1)
     
-    # Desenhar código de barras falso (ícone)
     bx_start = int(largura * (40/500))
     by1 = int(altura * (145/240))
     by2 = int(altura * (185/240))
@@ -241,27 +271,37 @@ def gerar_caixa_consulta(largura, altura, raio=15):
     
     for i in range(10):
         w = 1 if i % 2 == 0 else 2
-        draw.line([(bx_start + i*espaco, by1), (bx_start + i*espaco, by2)], fill=(150, 150, 150, 255), width=w)
+        draw.line([(bx_start + i*espaco, by1), (bx_start + i*espaco, by2)], fill=(200, 200, 200, 255), width=w)
         
     return ImageTk.PhotoImage(img)
 
-def gerar_caixa_atalhos(largura, altura, status, raio=15):
-    img = Image.new('RGBA', (int(largura), int(altura)), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    cor_fundo = (22, 22, 24, 255)
-    cor_borda = (51, 51, 51, 255)
-    draw.rounded_rectangle([(0, 0), (int(largura)-1, int(altura)-1)], radius=int(raio), fill=cor_fundo, outline=cor_borda, width=1)
+def gerar_caixa_atalhos(largura, altura, status, raio=15, x=0, y=0):
+    if x == 0: x = px(1400)
+    if y == 0: y = py(410)
     
-    # Função auxiliar para desenhar teclas
+    img = aplicar_efeito_vidro(largura, altura, x, y)
+    
+    mask = Image.new('L', img.size, 0)
+    draw_mask = ImageDraw.Draw(mask)
+    draw_mask.rounded_rectangle([(0, 0), (int(largura)-1, int(altura)-1)], radius=int(raio), fill=255)
+    img.putalpha(mask)
+    
+    border = Image.new('RGBA', img.size, (0, 0, 0, 0))
+    draw_border = ImageDraw.Draw(border)
+    draw_border.rounded_rectangle([(0, 0), (int(largura)-1, int(altura)-1)], radius=int(raio), outline=(255, 255, 255, 130), width=2)
+    img = Image.alpha_composite(img, border)
+    
+    draw = ImageDraw.Draw(img)
+    
     def desenhar_tecla(x1, y1, x2, y2):
-        draw.rounded_rectangle([(x1, y1), (x2, y2)], radius=8, fill=(30, 30, 32, 255), outline=(100, 100, 100, 255), width=1)
+        draw.rounded_rectangle([(x1, y1), (x2, y2)], radius=8, fill=(0, 0, 0, 40), outline=(255, 255, 255, 80), width=1)
         
     w = int(largura)
     h = int(altura)
     
-    # Altura fixa para as teclas na parte inferior (linha Y: 60 a 120)
-    y_topo = int(h*(60/140))
-    y_base = int(h*(120/140))
+    # Altura fixa para as teclas na parte inferior
+    y_topo = int(h*(60/140)) if status != "aberto" else int(h*(60/240))
+    y_base = int(h*(120/140)) if status != "aberto" else int(h*(120/240))
     
     if status == "aberto":
         # 3 Teclas. Largura total = 80 + 20 + 80 + 20 + 120 = 320. Margem = (500-320)/2 = 90
@@ -308,7 +348,7 @@ texto_btn_espaco = canvas.create_text(px(1750), py(500), text="", font=("Helveti
 
 # --- BLOCO 3 DIREITA (CONSULTA RÁPIDA) ---
 janela.img_box_consulta = gerar_caixa_consulta(px(500), py(240))
-canvas.create_image(px(1400), py(580), image=janela.img_box_consulta, anchor="nw")
+id_fundo_consulta = canvas.create_image(px(1400), py(580), image=janela.img_box_consulta, anchor="nw")
 
 canvas.create_text(px(1460), py(645), text="🔍", font=("Segoe UI Emoji", f(40)), fill="#FF6600", anchor="center")
 canvas.create_text(px(1510), py(625), text="CONSULTA RÁPIDA", font=("Helvetica", f(22), "bold"), fill="white", anchor="w")
@@ -323,27 +363,33 @@ entry_busca.pack(fill="both", expand=True, padx=2, pady=2)
 frame_busca.place(x=px(1490), y=py(720), width=px(385), height=py(50))
 
 # --- FUNDO NATIVO DO RODAPÉ (GERADO VIA PIL) ---
-def gerar_fundo_rodape():
+def gerar_fundo_rodape(x=0, y=0):
+    if x == 0: x = px(20)
+    if y == 0: y = py(920)
+    
     largura = int(px(1200))
     altura = int(py(110))
     raio = int(px(15))
     
-    # Criar imagem transparente
-    img = Image.new('RGBA', (largura, altura), (0, 0, 0, 0))
+    img = aplicar_efeito_vidro(largura, altura, x, y)
+    
+    mask = Image.new('L', img.size, 0)
+    draw_mask = ImageDraw.Draw(mask)
+    draw_mask.rounded_rectangle([(0, 0), (largura-1, altura-1)], radius=raio, fill=255)
+    img.putalpha(mask)
+    
+    border = Image.new('RGBA', img.size, (0, 0, 0, 0))
+    draw_border = ImageDraw.Draw(border)
+    draw_border.rounded_rectangle([(0, 0), (largura-1, altura-1)], radius=raio, outline=(255, 255, 255, 130), width=2)
+    img = Image.alpha_composite(img, border)
+    
     draw = ImageDraw.Draw(img)
-    
-    # Cor de fundo (cinza escuro transparente) e borda (cinza sutil)
-    cor_fundo = (20, 20, 20, 240)  # #141414 com leve transparência
-    cor_borda = (51, 51, 51, 255)  # #333333
-    
-    # Retângulo principal arredondado
-    draw.rounded_rectangle([(0, 0), (largura-1, altura-1)], radius=raio, fill=cor_fundo, outline=cor_borda, width=2)
     
     # Divisórias
     divisores_x = [250, 480, 715, 950]
     for x_val in divisores_x:
-        x = int(px(x_val))
-        draw.line([(x, 15), (x, altura - 15)], fill=cor_borda, width=1)
+        x_linha = int(px(x_val))
+        draw.line([(x_linha, 15), (x_linha, altura - 15)], fill=(255, 255, 255, 40), width=1)
         
     return ImageTk.PhotoImage(img)
 
@@ -845,7 +891,8 @@ threading.Thread(target=atualizar_texto_status, daemon=True).start()
 # ------------------------------------------------------------------
 
 def atualizar_fundo_dinamico():
-    global caminho_imagem_atual, imagem_fundo_salva, id_imagem_canvas
+    global caminho_imagem_atual, imagem_fundo_salva, id_imagem_canvas, fundo_pil_global
+    global id_fundo_consulta, id_fundo_atalhos, id_fundo_status, id_fundo_rodape
     
     cfg_atual = carregar_config()
     novo_nome = cfg_atual["NOME_LOJA"].strip()
@@ -862,6 +909,7 @@ def atualizar_fundo_dinamico():
             try:
                 img_orig = Image.open(novo_caminho)
                 img_redim = img_orig.resize((largura_tela, altura_tela))
+                fundo_pil_global = img_redim.copy()
                 imagem_fundo_salva = ImageTk.PhotoImage(img_redim)
                 
                 if id_imagem_canvas is None:
@@ -870,6 +918,33 @@ def atualizar_fundo_dinamico():
                     canvas.itemconfig(id_imagem_canvas, image=imagem_fundo_salva)
                 
                 canvas.tag_lower(id_imagem_canvas)
+                
+                # Regerar blocos de vidro com o novo fundo
+                nova_img_consulta = gerar_caixa_consulta(px(500), py(240), x=px(1400), y=py(570))
+                janela.img_box_consulta = nova_img_consulta
+                canvas.itemconfig(id_fundo_consulta, image=nova_img_consulta)
+                
+                # Para saber se a caixa de atalhos está aberta ou fechada, checamos o status real do texto
+                texto_titulo = canvas.itemcget(texto_titulo_status, 'text')
+                status_atalhos = "aberto" if "LIVRE" in texto_titulo else "fechado"
+                
+                nova_img_atalhos = gerar_caixa_atalhos(px(500), py(140) if status_atalhos == "fechado" else py(240), status_atalhos, x=px(1400), y=py(410))
+                janela.img_box_atalhos = nova_img_atalhos
+                canvas.itemconfig(id_fundo_atalhos, image=nova_img_atalhos)
+                
+                # Rodapé (agora com vidro)
+                nova_img_rodape = gerar_fundo_rodape(x=px(20), y=py(920))
+                janela.img_fundo_rodape = nova_img_rodape
+                canvas.itemconfig(id_fundo_rodape, image=nova_img_rodape)
+                
+                # A caixa de status é atualizada sozinha a cada 1 segundo no loop, mas forçamos agora também
+                dados_caixa = verificar_status_caixa()
+                st = dados_caixa.get("status", "F")
+                cor = "lime" if st == 'A' else "red"
+                nova_img_status = gerar_caixa_status(px(500), py(200), cor, x=px(1400), y=py(180))
+                janela.img_box_status = nova_img_status 
+                canvas.itemconfig(id_fundo_status, image=nova_img_status)
+                
             except FileNotFoundError:
                 if id_imagem_canvas is not None:
                     canvas.delete(id_imagem_canvas)
