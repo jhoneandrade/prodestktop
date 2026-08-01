@@ -195,8 +195,8 @@ def aplicar_efeito_vidro(largura, altura, x, y):
     enhancer = ImageEnhance.Brightness(blur)
     blur = enhancer.enhance(1.1)
     
-    # 3. Tint esbranquiçado (Gelo) em vez de smoke escuro, para bater com a imagem de referência
-    tint = Image.new('RGBA', blur.size, (255, 255, 255, 60))
+    # 3. Tint esbranquiçado (Gelo) mais forte para deixar mais leitoso/claro
+    tint = Image.new('RGBA', blur.size, (255, 255, 255, 140))
     glass = Image.alpha_composite(blur, tint)
     return glass
 
