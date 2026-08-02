@@ -11,16 +11,45 @@ else:
 CAMINHO_INI = os.path.join(DIRETORIO_ATUAL, 'config.ini')
 
 def criar_ini_padrao(caminho):
+    # Valores padrões nativos
+    def_ip = '127.0.0.1'
+    def_pdv = '1'
+    def_banco = r'C:\GansoPDV\GansoPDV.IB'
+    def_filial = '1'
+    
+    # Tenta ler o PDV.INI original para importar as configurações de forma invisível
+    caminho_pdv_ini = r'C:\GansoPDV\PDV.INI'
+    if os.path.exists(caminho_pdv_ini):
+        try:
+            # interpolation=None evita erros caso o INI do Delphi tenha "%"
+            pdv_config = configparser.ConfigParser(interpolation=None)
+            # Lê o INI com o encoding padrão do sistema (seguro para INIs gerados no Windows/Delphi)
+            pdv_config.read(caminho_pdv_ini) 
+            
+            if pdv_config.has_option('REMOTO', 'IP'):
+                def_ip = pdv_config.get('REMOTO', 'IP')
+                
+            if pdv_config.has_option('LOCAL', 'PDV'):
+                def_pdv = pdv_config.get('LOCAL', 'PDV')
+                
+            if pdv_config.has_option('LOCAL', 'Path_Database'):
+                def_banco = pdv_config.get('LOCAL', 'Path_Database')
+                
+            if pdv_config.has_option('LOCAL', 'FILIAL'):
+                def_filial = pdv_config.get('LOCAL', 'FILIAL')
+        except Exception:
+            pass # Se o arquivo estiver corrompido ou inacessível, usa os padrões nativos
+            
     config = configparser.ConfigParser()
-    config['REDE'] = {'ip': '127.0.0.1'}
+    config['REDE'] = {'ip': def_ip}
     config['SISTEMA'] = {
-        'pdv': '1',
+        'pdv': def_pdv,
         'loja': 'ProDesktop',
         'imagem_fundo': 'fundo_moderno.png',
         'caminho_pdv': r'C:\GansoPDV\PDV.exe',
         'ativar_repouso': '900',
-        'caminho_banco': r'C:\GansoPDV\GansoPDV.IB',
-        'codigo_filial': '1',
+        'caminho_banco': def_banco,
+        'codigo_filial': def_filial,
         'exibir_promocoes': 'S',
         'exibir_imagens_promocoes': 'S'
     }
