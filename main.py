@@ -110,6 +110,50 @@ altura_tela = janela.winfo_screenheight()
 canvas = tk.Canvas(janela, width=largura_tela, height=altura_tela, highlightthickness=0, bg="black")
 canvas.pack(fill="both", expand=True)
 
+# --- OVERRIDE PARA SOMBRAS GLOBAIS EM TODOS OS TEXTOS ---
+original_create_text = canvas.create_text
+original_itemconfig = canvas.itemconfig
+original_delete = canvas.delete
+shadow_map = {}
+
+def custom_create_text(*args, **kwargs):
+    if kwargs.get("tags") == "sombra_global":
+        return original_create_text(*args, **kwargs)
+        
+    sombra_kwargs = kwargs.copy()
+    sombra_kwargs["fill"] = "black"
+    sombra_kwargs["tags"] = "sombra_global"
+    
+    shadow_args = list(args)
+    if len(shadow_args) >= 2:
+        shadow_args[0] += px(2)
+        shadow_args[1] += py(2)
+        
+    id_sombra = original_create_text(*shadow_args, **sombra_kwargs)
+    id_texto = original_create_text(*args, **kwargs)
+    shadow_map[id_texto] = id_sombra
+    return id_texto
+
+def custom_itemconfig(tagOrId, **kwargs):
+    if tagOrId in shadow_map:
+        sombra_kwargs = kwargs.copy()
+        if 'fill' in sombra_kwargs: del sombra_kwargs['fill']
+        if 'activefill' in sombra_kwargs: del sombra_kwargs['activefill']
+        original_itemconfig(shadow_map[tagOrId], **sombra_kwargs)
+    original_itemconfig(tagOrId, **kwargs)
+
+def custom_delete(*args):
+    for t in args:
+        if t in shadow_map:
+            original_delete(shadow_map[t])
+            del shadow_map[t]
+    original_delete(*args)
+
+canvas.create_text = custom_create_text
+canvas.itemconfig = custom_itemconfig
+canvas.delete = custom_delete
+# --------------------------------------------------------
+
 # Funções de escalonamento para 16:9
 def f(tamanho):
     return int(tamanho * (largura_tela / 1920))
@@ -133,7 +177,6 @@ id_texto_loja = canvas.create_text(px(100), py(100),
                                    fill="#FF6600", anchor="w")
 
 # Relógio e Data (Canto Superior Direito)
-# Deslocados para a esquerda (X=1700) para dar espaço ao relógio analógico
 texto_relogio = canvas.create_text(px(1700), py(30),
                     text="00:00:00",
                     font=("Helvetica", f(60), "bold"),
@@ -181,22 +224,17 @@ ponteiro_s = canvas.create_line(px(cx), py(cy), px(cx), py(cy), fill="#FF6600", 
 def aplicar_efeito_vidro(largura, altura, x, y):
     global fundo_pil_global
     if 'fundo_pil_global' not in globals() or fundo_pil_global is None:
-        # Fallback
-        return Image.new('RGBA', (int(largura), int(altura)), (255, 255, 255, 150))
+        # Fallback dark glass
+        return Image.new('RGBA', (int(largura), int(altura)), (22, 22, 24, 200))
     
     # 1. Crop do fundo (onde a caixa vai ficar)
     crop = fundo_pil_global.crop((int(x), int(y), int(x + largura), int(y + altura)))
     
-    # 2. Desfoque intenso (Estilo iOS)
-    blur = crop.filter(ImageFilter.GaussianBlur(35)).convert("RGBA")
+    # 2. Desfoque reduzido para manter a nitidez do fundo (como estava no botão F12)
+    blur = crop.filter(ImageFilter.GaussianBlur(15)).convert("RGBA")
     
-    # Aumentar um pouco o brilho do fundo desfocado para dar aquele ar premium claro
-    from PIL import ImageEnhance
-    enhancer = ImageEnhance.Brightness(blur)
-    blur = enhancer.enhance(1.1)
-    
-    # 3. Tint esbranquiçado (Gelo) mais forte para deixar mais leitoso/claro
-    tint = Image.new('RGBA', blur.size, (255, 255, 255, 140))
+    # 3. Tint escuro translúcido idêntico ao que o botão F12 tinha (o que causou o efeito que o usuário gostou)
+    tint = Image.new('RGBA', blur.size, (0, 0, 0, 120))
     glass = Image.alpha_composite(blur, tint)
     return glass
 
@@ -262,7 +300,7 @@ def gerar_caixa_consulta(largura, altura, raio=15, x=0, y=0):
     ix1 = int(largura * (20/500))
     ix2 = int(largura * (480/500))
     
-    draw.rounded_rectangle([(ix1, iy1), (ix2, iy2)], radius=10, fill=(0, 0, 0, 60), outline=(255, 255, 255, 60), width=1)
+    draw.rounded_rectangle([(ix1, iy1), (ix2, iy2)], radius=10, fill=(0, 0, 0, 200), outline=(255, 255, 255, 100), width=1)
     
     bx_start = int(largura * (40/500))
     by1 = int(altura * (145/240))
@@ -294,7 +332,7 @@ def gerar_caixa_atalhos(largura, altura, status, raio=15, x=0, y=0):
     draw = ImageDraw.Draw(img)
     
     def desenhar_tecla(x1, y1, x2, y2):
-        draw.rounded_rectangle([(x1, y1), (x2, y2)], radius=8, fill=(0, 0, 0, 40), outline=(255, 255, 255, 80), width=1)
+        draw.rounded_rectangle([(x1, y1), (x2, y2)], radius=8, fill=(0, 0, 0, 200), outline=(255, 255, 255, 100), width=1)
         
     w = int(largura)
     h = int(altura)
@@ -331,8 +369,7 @@ texto_titulo_status = canvas.create_text(px(1560), py(280),
 texto_secundario_status = canvas.create_text(px(1560), py(305),
                    text="",
                    font=("Helvetica", f(20)),
-                   fill="#AAAAAA",
-                   anchor="w")
+                   fill="#AAAAAA", anchor="w")
 
 # --- BLOCO 2 DIREITA (ATALHOS - F12, ESC, ESPAÇO) ---
 janela.img_box_atalhos = gerar_caixa_atalhos(px(500), py(140), "fechado")
@@ -426,40 +463,37 @@ canvas.create_text(px(1000), py(970), text="👤", font=("Segoe UI Emoji", f(30)
 texto_titulo_usuario = canvas.create_text(px(1030), py(950), text="ÚLTIMO USUÁRIO", font=("Helvetica", f(12)), fill="#AAAAAA", anchor="w")
 texto_usuario_caixa = canvas.create_text(px(1030), py(990), text="", font=("Helvetica", f(16), "bold"), fill="white", anchor="w")
 
-# --- TEXTOS EXTRAS NO RODAPÉ INFERIOR (Início, Meio e Fim na mesma linha Y=1050) ---
 # INÍCIO (Esquerda)
 canvas.create_text(px(20), py(1050), text="🛡️", font=("Segoe UI Emoji", f(14)), fill="#FF6600", anchor="w")
 canvas.create_text(px(50), py(1050), text="SEGURANÇA", font=("Helvetica", f(14), "bold"), fill="#FF6600", anchor="w")
 canvas.create_text(px(165), py(1050), text=" Este terminal é monitorado e protegido", font=("Helvetica", f(14), "bold"), fill="white", anchor="w")
 
 # MEIO (Centro Visual Absoluto)
-# Total de caracteres é ~33. O ponto de divisão ("ProDesktop " -> "Tecnologia...") fica levemente deslocado para a esquerda (X=910)
-# para que o bloco inteiro fique centralizado em X=960.
 canvas.create_text(px(910), py(1050), text="ProDesktop ", font=("Helvetica", f(14), "bold"), fill="#FF6600", anchor="e")
 canvas.create_text(px(910), py(1050), text="Tecnologia que conecta", font=("Helvetica", f(14), "bold"), fill="white", anchor="w")
 
 # FIM (Direita)
-# Ancorados exatamente na margem direita (1900). 
-# "Volte sempre!" ocupa ~120px, então "Obrigado..." termina em 1780.
 canvas.create_text(px(1900), py(1050), text="Volte sempre!", font=("Helvetica", f(14), "bold"), fill="#FF6600", anchor="e")
 canvas.create_text(px(1780), py(1050), text="Obrigado pela preferência! ", font=("Helvetica", f(14), "bold"), fill="white", anchor="e")
 
-texto_nome_produto = canvas.create_text(px(630), py(400),
+texto_nome_produto = canvas.create_text(px(60), py(770),
                                            text="",
                                            font=("Helvetica", f(35), "bold"),
                                            fill="white",
-                                           justify="center",
-                                           width=px(1000))  # Quebra de linha automática
+                                           justify="left",
+                                           anchor="sw",
+                                           width=px(1200))  # Quebra de linha automática
 
-texto_preco_produto = canvas.create_text(px(630), py(550),
+texto_preco_produto = canvas.create_text(px(60), py(780),
                                            text="",
-                                           font=("Helvetica", f(45), "bold"),
+                                           font=("Helvetica", f(35), "bold"),
                                            fill="#2ECC71",  # Verde esmeralda moderno
-                                           justify="center")
+                                           justify="left",
+                                           anchor="nw")
 
 id_timer_busca = None
 
-def limpar_resultado_busca():
+def limpar_busca():
     canvas.itemconfig(texto_nome_produto, text="")
     canvas.itemconfig(texto_preco_produto, text="")
 
@@ -469,7 +503,7 @@ def exibir_resultado(nome, valores, cor):
         janela.after_cancel(id_timer_busca)
     canvas.itemconfig(texto_nome_produto, text=nome, fill="white" if cor != "red" else "red")
     canvas.itemconfig(texto_preco_produto, text=valores, fill=cor)
-    id_timer_busca = janela.after(5000, limpar_resultado_busca)
+    id_timer_busca = janela.after(5000, limpar_busca)
 
 def realizar_busca(event=None):
     codigo = entry_busca.get().strip()
@@ -489,7 +523,7 @@ def realizar_busca(event=None):
                 
                 if preco_p > 0:
                     texto_promo = f"R$ {preco_p:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-                    texto_valores = f"Valor Normal: {texto_venda}\nPromoção: {texto_promo}"
+                    texto_valores = f"Valor Normal: {texto_venda}   |   Promoção: {texto_promo}"
                 else:
                     texto_valores = f"Valor: {texto_venda}"
                 
@@ -905,6 +939,7 @@ def atualizar_fundo_dinamico():
     
     if novo_caminho != caminho_imagem_atual:
         caminho_imagem_atual = novo_caminho 
+        fundo_carregado = False
         if novo_caminho: 
             try:
                 img_orig = Image.open(novo_caminho)
@@ -918,41 +953,41 @@ def atualizar_fundo_dinamico():
                     canvas.itemconfig(id_imagem_canvas, image=imagem_fundo_salva)
                 
                 canvas.tag_lower(id_imagem_canvas)
-                
-                # Regerar blocos de vidro com o novo fundo
-                nova_img_consulta = gerar_caixa_consulta(px(500), py(240), x=px(1400), y=py(570))
-                janela.img_box_consulta = nova_img_consulta
-                canvas.itemconfig(id_fundo_consulta, image=nova_img_consulta)
-                
-                # Para saber se a caixa de atalhos está aberta ou fechada, checamos o status real do texto
-                texto_titulo = canvas.itemcget(texto_titulo_status, 'text')
-                status_atalhos = "aberto" if "LIVRE" in texto_titulo else "fechado"
-                
-                nova_img_atalhos = gerar_caixa_atalhos(px(500), py(140) if status_atalhos == "fechado" else py(240), status_atalhos, x=px(1400), y=py(410))
-                janela.img_box_atalhos = nova_img_atalhos
-                canvas.itemconfig(id_fundo_atalhos, image=nova_img_atalhos)
-                
-                # Rodapé (agora com vidro)
-                nova_img_rodape = gerar_fundo_rodape(x=px(20), y=py(920))
-                janela.img_fundo_rodape = nova_img_rodape
-                canvas.itemconfig(id_fundo_rodape, image=nova_img_rodape)
-                
-                # A caixa de status é atualizada sozinha a cada 1 segundo no loop, mas forçamos agora também
-                dados_caixa = verificar_status_caixa()
-                st = dados_caixa.get("status", "F")
-                cor = "lime" if st == 'A' else "red"
-                nova_img_status = gerar_caixa_status(px(500), py(200), cor, x=px(1400), y=py(180))
-                janela.img_box_status = nova_img_status 
-                canvas.itemconfig(id_fundo_status, image=nova_img_status)
-                
+                fundo_carregado = True
             except FileNotFoundError:
-                if id_imagem_canvas is not None:
-                    canvas.delete(id_imagem_canvas)
-                    id_imagem_canvas = None
-        else:
+                pass
+                
+        if not fundo_carregado:
+            fundo_pil_global = None
             if id_imagem_canvas is not None:
                 canvas.delete(id_imagem_canvas)
                 id_imagem_canvas = None
+                
+        # Regerar blocos de vidro com o novo fundo (ou sem fundo)
+        nova_img_consulta = gerar_caixa_consulta(px(500), py(240), x=px(1400), y=py(570))
+        janela.img_box_consulta = nova_img_consulta
+        canvas.itemconfig(id_fundo_consulta, image=nova_img_consulta)
+        
+        # Para saber se a caixa de atalhos está aberta ou fechada, checamos o status real do texto
+        texto_titulo = canvas.itemcget(texto_titulo_status, 'text')
+        status_atalhos = "aberto" if "LIVRE" in texto_titulo else "fechado"
+        
+        nova_img_atalhos = gerar_caixa_atalhos(px(500), py(140) if status_atalhos == "fechado" else py(240), status_atalhos, x=px(1400), y=py(410))
+        janela.img_box_atalhos = nova_img_atalhos
+        canvas.itemconfig(id_fundo_atalhos, image=nova_img_atalhos)
+        
+        # Rodapé (agora com vidro)
+        nova_img_rodape = gerar_fundo_rodape(x=px(20), y=py(920))
+        janela.img_fundo_rodape = nova_img_rodape
+        canvas.itemconfig(id_fundo_rodape, image=nova_img_rodape)
+        
+        # A caixa de status é atualizada sozinha a cada 1 segundo no loop, mas forçamos agora também
+        dados_caixa = verificar_status_caixa()
+        st = dados_caixa.get("status", "F")
+        cor = "lime" if st == 'A' else "red"
+        nova_img_status = gerar_caixa_status(px(500), py(200), cor, x=px(1400), y=py(180))
+        janela.img_box_status = nova_img_status 
+        canvas.itemconfig(id_fundo_status, image=nova_img_status)
                 
     janela.after(3000, atualizar_fundo_dinamico)
 
