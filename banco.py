@@ -95,7 +95,7 @@ def verificar_status_caixa():
         )
         cur = con.cursor()
         
-        sql = "SELECT FIRST 1 status, usuario_abertura, usuario_reabertura FROM caixa"
+        sql = "SELECT FIRST 1 status, usuario_abertura, usuario_reabertura FROM caixa ORDER BY codigo DESC"
         cur.execute(sql)
         row = cur.fetchone()
         

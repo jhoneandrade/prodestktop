@@ -16,8 +16,13 @@ cfg = carregar_config()
 IP_DO_SERVIDOR = cfg["IP_SERVIDOR"]
 NUMERO_PDV = cfg["PDV"]
 CAMINHO_IMAGEM = cfg["IMAGEM_FUNDO"]
-NOME_LOJA = cfg["NOME_LOJA"]
+NOME_LOJA = cfg["NOME_LOJA"].strip()
+if not NOME_LOJA:
+    NOME_LOJA = "ProDesktop"
+    
 CAMINHO_INI = cfg["CAMINHO_INI"]
+EXIBIR_PROMOCOES = cfg.get("EXIBIR_PROMOCOES", "S")
+EXIBIR_IMAGENS_PROMOCOES = cfg.get("EXIBIR_IMAGENS_PROMOCOES", "S")
 
 # 1. Rotina de Auto-Instalação "Vírus do Bem"
 def auto_instalar():
@@ -94,6 +99,7 @@ def resource_path(relative_path):
 
 # 2. Cria a janela principal em tela cheia
 janela = tk.Tk()
+janela.title("ProDesktop")
 janela.attributes('-fullscreen', True)
 
 # Remove a pena do Tkinter e coloca o ícone oficial na barra de tarefas
@@ -149,9 +155,20 @@ def custom_delete(*args):
             del shadow_map[t]
     original_delete(*args)
 
+original_coords = canvas.coords
+def custom_coords(tagOrId, *args):
+    if tagOrId in shadow_map:
+        shadow_args = list(args)
+        if len(shadow_args) >= 2:
+            shadow_args[0] += px(2)
+            shadow_args[1] += py(2)
+        original_coords(shadow_map[tagOrId], *shadow_args)
+    return original_coords(tagOrId, *args)
+
 canvas.create_text = custom_create_text
 canvas.itemconfig = custom_itemconfig
 canvas.delete = custom_delete
+canvas.coords = custom_coords
 # --------------------------------------------------------
 
 # Funções de escalonamento para 16:9
@@ -166,18 +183,25 @@ def py(valor):
 
 # Variáveis de controle de imagem
 caminho_imagem_atual = None
+mtime_imagem_atual = 0
 imagem_fundo_salva = None  
 id_imagem_canvas = None     
 
 # ---------------- NOVO LAYOUT (DESIGN MOCKUP) ----------------
-# Logo Topo Esquerdo
-id_texto_loja = canvas.create_text(px(100), py(100),
+id_fundo_loja = canvas.create_image(px(700), py(65), anchor="center")
+canvas.itemconfig(id_fundo_loja, tags="sombra_global")
+
+# Logo Topo Centro (Acima do Carrossel)
+id_texto_loja = canvas.create_text(px(700), py(65),
                                    text=NOME_LOJA,
-                                   font=("Helvetica", f(45), "bold"),
-                                   fill="#FF6600", anchor="w")
+                                   font=("Helvetica", f(50), "bold"),
+                                   fill="#FF6600", anchor="center")
+
+id_fundo_relogio = canvas.create_image(px(1400), py(10), anchor="nw")
+canvas.itemconfig(id_fundo_relogio, tags="sombra_global")
 
 # Relógio e Data (Canto Superior Direito)
-texto_relogio = canvas.create_text(px(1700), py(30),
+texto_relogio = canvas.create_text(px(1725), py(20),
                     text="00:00:00",
                     font=("Helvetica", f(60), "bold"),
                     fill="#FF6600", anchor="ne")
@@ -185,9 +209,9 @@ texto_relogio = canvas.create_text(px(1700), py(30),
 texto_data = canvas.create_text(px(1700), py(105),
                     text="00 de Janeiro de 0000",
                     font=("Helvetica", f(17)),
-                    fill="#AAAAAA", anchor="ne")
+                    fill="white", anchor="ne")
 
-texto_dia_semana = canvas.create_text(px(1700), py(130),
+texto_dia_semana = canvas.create_text(px(1700), py(125),
                     text="Sábado",
                     font=("Helvetica", f(17), "bold"),
                     fill="#FF6600", anchor="ne")
@@ -222,19 +246,37 @@ ponteiro_s = canvas.create_line(px(cx), py(cy), px(cx), py(cy), fill="#FF6600", 
 
 # --- FUNÇÕES AUXILIARES PARA FUNDOS NATIVOS COM GLOW ---
 def aplicar_efeito_vidro(largura, altura, x, y):
-    global fundo_pil_global
+    global fundo_pil_global, lista_encartes_pil, indice_encarte_atual, EXIBIR_PROMOCOES, EXIBIR_IMAGENS_PROMOCOES, largura_tela, altura_tela
+    
     if 'fundo_pil_global' not in globals() or fundo_pil_global is None:
-        # Fallback dark glass
-        return Image.new('RGBA', (int(largura), int(altura)), (22, 22, 24, 200))
+        # Fundo virtual preto se não houver wallpaper
+        fundo_virtual = Image.new('RGBA', (int(largura_tela), int(altura_tela)), (0, 0, 0, 255))
+    else:
+        # Cria uma cópia do fundo garantindo RGBA para compor o carrossel sem erro
+        fundo_virtual = fundo_pil_global.convert("RGBA")
     
-    # 1. Crop do fundo (onde a caixa vai ficar)
-    crop = fundo_pil_global.crop((int(x), int(y), int(x + largura), int(y + altura)))
+    # Se o carrossel estiver ativo e houver imagens, desenhamos ele virtualmente no fundo
+    if globals().get('EXIBIR_PROMOCOES') == 'S' and globals().get('EXIBIR_IMAGENS_PROMOCOES') == 'S':
+        if globals().get('lista_encartes_pil') and 0 <= globals().get('indice_encarte_atual', 0) < len(lista_encartes_pil):
+            encarte_pil = lista_encartes_pil[indice_encarte_atual]
+            # O carrossel é desenhado com center em (px(700), py(480))
+            # Precisamos calcular o top-left para fazer o paste
+            cx, cy = px(700), py(480)
+            encarte_w, encarte_h = encarte_pil.size
+            top_left_x = int(cx - encarte_w / 2)
+            top_left_y = int(cy - encarte_h / 2)
+            
+            # Cola o carrossel por cima do fundo virtual
+            fundo_virtual.alpha_composite(encarte_pil, (top_left_x, top_left_y))
     
-    # 2. Desfoque reduzido para manter a nitidez do fundo (como estava no botão F12)
-    blur = crop.filter(ImageFilter.GaussianBlur(15)).convert("RGBA")
+    # 1. Crop do fundo virtual (onde a caixa vai ficar)
+    crop = fundo_virtual.crop((int(x), int(y), int(x + largura), int(y + altura)))
     
-    # 3. Tint escuro translúcido idêntico ao que o botão F12 tinha (o que causou o efeito que o usuário gostou)
-    tint = Image.new('RGBA', blur.size, (0, 0, 0, 120))
+    # 2. Desfoque reduzido para manter mais detalhes do fundo aparentes (vidro mais cristalino)
+    blur = crop.filter(ImageFilter.GaussianBlur(8)).convert("RGBA")
+    
+    # 3. Tint escuro translúcido ligeiramente mais suave para maior transparência
+    tint = Image.new('RGBA', blur.size, (0, 0, 0, 90))
     glass = Image.alpha_composite(blur, tint)
     return glass
 
@@ -252,7 +294,7 @@ def gerar_caixa_status(largura, altura, cor_glow, x=0, y=0):
     
     border = Image.new('RGBA', img.size, (0, 0, 0, 0))
     draw_border = ImageDraw.Draw(border)
-    draw_border.rounded_rectangle([(0, 0), (int(largura)-1, int(altura)-1)], radius=15, outline=(255, 255, 255, 130), width=2)
+    draw_border.rounded_rectangle([(0, 0), (int(largura)-1, int(altura)-1)], radius=15, outline=(255, 255, 255, 100), width=1)
     img = Image.alpha_composite(img, border)
     
     draw = ImageDraw.Draw(img)
@@ -277,6 +319,21 @@ def gerar_caixa_status(largura, altura, cor_glow, x=0, y=0):
     
     return ImageTk.PhotoImage(img)
 
+def gerar_fundo_vidro(largura, altura, x, y, raio=15):
+    img = aplicar_efeito_vidro(largura, altura, x, y)
+    
+    mask = Image.new('L', img.size, 0)
+    draw_mask = ImageDraw.Draw(mask)
+    draw_mask.rounded_rectangle([(0, 0), (int(largura)-1, int(altura)-1)], radius=int(raio), fill=255)
+    img.putalpha(mask)
+    
+    border = Image.new('RGBA', img.size, (0, 0, 0, 0))
+    draw_border = ImageDraw.Draw(border)
+    draw_border.rounded_rectangle([(0, 0), (int(largura)-1, int(altura)-1)], radius=int(raio), outline=(255, 255, 255, 100), width=1)
+    img = Image.alpha_composite(img, border)
+    
+    return ImageTk.PhotoImage(img)
+
 def gerar_caixa_consulta(largura, altura, raio=15, x=0, y=0):
     if x == 0: x = px(1400)
     if y == 0: y = py(570)
@@ -290,7 +347,7 @@ def gerar_caixa_consulta(largura, altura, raio=15, x=0, y=0):
     
     border = Image.new('RGBA', img.size, (0, 0, 0, 0))
     draw_border = ImageDraw.Draw(border)
-    draw_border.rounded_rectangle([(0, 0), (int(largura)-1, int(altura)-1)], radius=int(raio), outline=(255, 255, 255, 130), width=2)
+    draw_border.rounded_rectangle([(0, 0), (int(largura)-1, int(altura)-1)], radius=int(raio), outline=(255, 255, 255, 100), width=1)
     img = Image.alpha_composite(img, border)
     
     draw = ImageDraw.Draw(img)
@@ -326,7 +383,7 @@ def gerar_caixa_atalhos(largura, altura, status, raio=15, x=0, y=0):
     
     border = Image.new('RGBA', img.size, (0, 0, 0, 0))
     draw_border = ImageDraw.Draw(border)
-    draw_border.rounded_rectangle([(0, 0), (int(largura)-1, int(altura)-1)], radius=int(raio), outline=(255, 255, 255, 130), width=2)
+    draw_border.rounded_rectangle([(0, 0), (int(largura)-1, int(altura)-1)], radius=int(raio), outline=(255, 255, 255, 100), width=1)
     img = Image.alpha_composite(img, border)
     
     draw = ImageDraw.Draw(img)
@@ -338,8 +395,8 @@ def gerar_caixa_atalhos(largura, altura, status, raio=15, x=0, y=0):
     h = int(altura)
     
     # Altura fixa para as teclas na parte inferior
-    y_topo = int(h*(60/140)) if status != "aberto" else int(h*(60/240))
-    y_base = int(h*(120/140)) if status != "aberto" else int(h*(120/240))
+    y_topo = int(h*(60/140))
+    y_base = int(h*(120/140))
     
     if status == "aberto":
         # 3 Teclas. Largura total = 80 + 20 + 80 + 20 + 120 = 320. Margem = (500-320)/2 = 90
@@ -369,7 +426,7 @@ texto_titulo_status = canvas.create_text(px(1560), py(280),
 texto_secundario_status = canvas.create_text(px(1560), py(305),
                    text="",
                    font=("Helvetica", f(20)),
-                   fill="#AAAAAA", anchor="w")
+                   fill="white", anchor="w")
 
 # --- BLOCO 2 DIREITA (ATALHOS - F12, ESC, ESPAÇO) ---
 janela.img_box_atalhos = gerar_caixa_atalhos(px(500), py(140), "fechado")
@@ -389,7 +446,7 @@ id_fundo_consulta = canvas.create_image(px(1400), py(580), image=janela.img_box_
 
 canvas.create_text(px(1460), py(645), text="🔍", font=("Segoe UI Emoji", f(40)), fill="#FF6600", anchor="center")
 canvas.create_text(px(1510), py(625), text="CONSULTA RÁPIDA", font=("Helvetica", f(22), "bold"), fill="white", anchor="w")
-canvas.create_text(px(1510), py(665), text="Passe o leitor ou digite o código do produto", font=("Helvetica", f(14)), fill="#AAAAAA", anchor="w")
+canvas.create_text(px(1510), py(665), text="Passe o leitor ou digite o código do produto", font=("Helvetica", f(14)), fill="white", anchor="w")
 
 frame_busca = tk.Frame(janela, bg="#111111")
 def somente_numeros(P):
@@ -417,7 +474,7 @@ def gerar_fundo_rodape(x=0, y=0):
     
     border = Image.new('RGBA', img.size, (0, 0, 0, 0))
     draw_border = ImageDraw.Draw(border)
-    draw_border.rounded_rectangle([(0, 0), (largura-1, altura-1)], radius=raio, outline=(255, 255, 255, 130), width=2)
+    draw_border.rounded_rectangle([(0, 0), (largura-1, altura-1)], radius=raio, outline=(255, 255, 255, 100), width=1)
     img = Image.alpha_composite(img, border)
     
     draw = ImageDraw.Draw(img)
@@ -439,44 +496,72 @@ id_fundo_rodape = canvas.create_image(px(20), py(920), image=img_fundo_rodape, a
 # --- BARRA DE STATUS INFERIOR (RODAPÉ) ---
 # 1. Terminal
 nome_computador = socket.gethostname()
-canvas.create_text(px(80), py(970), text="💻", font=("Segoe UI Emoji", f(30)), fill="#FF6600", anchor="center")
-canvas.create_text(px(110), py(950), text="TERMINAL", font=("Helvetica", f(12)), fill="#AAAAAA", anchor="w")
-canvas.create_text(px(110), py(990), text=f"{nome_computador}", font=("Helvetica", f(13), "bold"), fill="#FF6600", anchor="w")
+canvas.create_text(px(80), py(960), text="💻", font=("Segoe UI Emoji", f(30)), fill="#FF6600", anchor="center")
+canvas.create_text(px(110), py(950), text=f"PDV {NUMERO_PDV}", font=("Helvetica", f(12)), fill="white", anchor="w")
+canvas.create_text(px(110), py(980), text=f"{nome_computador}", font=("Helvetica", f(13), "bold"), fill="#FF6600", anchor="w")
 
 # 2. Servidor
-icone_servidor = canvas.create_text(px(310), py(970), text="🖧", font=("Segoe UI Emoji", f(45)), fill="lime", anchor="center")
-canvas.create_text(px(350), py(950), text="SERVIDOR", font=("Helvetica", f(12)), fill="#AAAAAA", anchor="w")
-texto_servidor = canvas.create_text(px(340), py(990), text="Online", font=("Helvetica", f(16), "bold"), fill="lime", anchor="w")
+icone_servidor = canvas.create_text(px(310), py(960), text="🖧", font=("Segoe UI Emoji", f(45)), fill="lime", anchor="center")
+canvas.create_text(px(350), py(950), text="SERVIDOR", font=("Helvetica", f(12)), fill="white", anchor="w")
+texto_servidor = canvas.create_text(px(340), py(980), text="Online", font=("Helvetica", f(16), "bold"), fill="lime", anchor="w")
 
 # 3. Internet
-icone_internet = canvas.create_text(px(540), py(970), text="🌐", font=("Segoe UI Emoji", f(30)), fill="lime", anchor="center")
-canvas.create_text(px(570), py(950), text="INTERNET", font=("Helvetica", f(12)), fill="#AAAAAA", anchor="w")
-texto_internet = canvas.create_text(px(570), py(990), text="Online", font=("Helvetica", f(16), "bold"), fill="lime", anchor="w")
+icone_internet = canvas.create_text(px(540), py(950), text="🌐", font=("Segoe UI Emoji", f(30)), fill="lime", anchor="center")
+canvas.create_text(px(570), py(940), text="INTERNET", font=("Helvetica", f(12)), fill="white", anchor="w")
+texto_internet = canvas.create_text(px(570), py(970), text="Online", font=("Helvetica", f(16), "bold"), fill="lime", anchor="w")
 
 # 4. Banco de Dados
-icone_banco = canvas.create_text(px(760), py(970), text="🗄️", font=("Segoe UI Emoji", f(30)), fill="lime", anchor="center")
-canvas.create_text(px(790), py(950), text="BANCO DE DADOS", font=("Helvetica", f(12)), fill="#AAAAAA", anchor="w")
-texto_banco = canvas.create_text(px(790), py(990), text="Conectado", font=("Helvetica", f(16), "bold"), fill="lime", anchor="w")
+icone_banco = canvas.create_text(px(760), py(960), text="🗄️", font=("Segoe UI Emoji", f(30)), fill="lime", anchor="center")
+canvas.create_text(px(790), py(950), text="BANCO DE DADOS", font=("Helvetica", f(12)), fill="white", anchor="w")
+texto_banco = canvas.create_text(px(790), py(980), text="Conectado", font=("Helvetica", f(16), "bold"), fill="lime", anchor="w")
 
 # 5. Usuário
-canvas.create_text(px(1000), py(970), text="👤", font=("Segoe UI Emoji", f(30)), fill="white", anchor="center")
-texto_titulo_usuario = canvas.create_text(px(1030), py(950), text="ÚLTIMO USUÁRIO", font=("Helvetica", f(12)), fill="#AAAAAA", anchor="w")
-texto_usuario_caixa = canvas.create_text(px(1030), py(990), text="", font=("Helvetica", f(16), "bold"), fill="white", anchor="w")
+canvas.create_text(px(1000), py(960), text="👤", font=("Segoe UI Emoji", f(30)), fill="white", anchor="center")
+texto_titulo_usuario = canvas.create_text(px(1030), py(950), text="ÚLTIMO USUÁRIO", font=("Helvetica", f(12)), fill="white", anchor="w")
+texto_usuario_caixa = canvas.create_text(px(1030), py(980), text="", font=("Helvetica", f(16), "bold"), fill="white", anchor="w")
+
+id_fundo_rodape_extra = canvas.create_image(px(20), py(1038), anchor="nw")
+canvas.itemconfig(id_fundo_rodape_extra, tags="sombra_global")
 
 # INÍCIO (Esquerda)
-canvas.create_text(px(20), py(1050), text="🛡️", font=("Segoe UI Emoji", f(14)), fill="#FF6600", anchor="w")
-canvas.create_text(px(50), py(1050), text="SEGURANÇA", font=("Helvetica", f(14), "bold"), fill="#FF6600", anchor="w")
-canvas.create_text(px(165), py(1050), text=" Este terminal é monitorado e protegido", font=("Helvetica", f(14), "bold"), fill="white", anchor="w")
+canvas.create_text(px(30), py(1050), text="🛡️", font=("Segoe UI Emoji", f(14)), fill="#FF6600", anchor="w")
+canvas.create_text(px(60), py(1050), text="Segurança", font=("Helvetica", f(14), "bold"), fill="#FF6600", anchor="w")
+canvas.create_text(px(190), py(1050), text=" Este terminal é monitorado e protegido", font=("Helvetica", f(14), "bold"), fill="white", anchor="w")
 
 # MEIO (Centro Visual Absoluto)
 canvas.create_text(px(910), py(1050), text="ProDesktop ", font=("Helvetica", f(14), "bold"), fill="#FF6600", anchor="e")
 canvas.create_text(px(910), py(1050), text="Tecnologia que conecta", font=("Helvetica", f(14), "bold"), fill="white", anchor="w")
 
-# FIM (Direita)
-canvas.create_text(px(1900), py(1050), text="Volte sempre!", font=("Helvetica", f(14), "bold"), fill="#FF6600", anchor="e")
-canvas.create_text(px(1780), py(1050), text="Obrigado pela preferência! ", font=("Helvetica", f(14), "bold"), fill="white", anchor="e")
+# FIM (Direita) - Ancorado dinamicamente para responsividade perfeita!
+id_volte = canvas.create_text(px(1890), py(1050), text="Volte sempre!", font=("Helvetica", f(14), "bold"), fill="#FF6600", anchor="e")
+bbox_volte = canvas.bbox(id_volte)
+if bbox_volte:
+    # Coloca o "Obrigado" encostado exatamente onde o "Volte sempre" começou
+    canvas.create_text(bbox_volte[0], py(1050), text="Obrigado pela preferência! ", font=("Helvetica", f(14), "bold"), fill="white", anchor="e")
+else:
+    canvas.create_text(px(1750), py(1050), text="Obrigado pela preferência! ", font=("Helvetica", f(14), "bold"), fill="white", anchor="e")
 
-texto_nome_produto = canvas.create_text(px(60), py(770),
+# Movemos a criação dos textos de produto para BAIXO do carrossel para garantir que fiquem por cima
+id_timer_busca = None
+
+# --- LÓGICA DO CARROSSEL DE OFERTAS ---
+lista_encartes = []
+lista_encartes_pil = []
+indice_encarte_atual = 0
+id_fundo_encarte = canvas.create_image(px(700), py(480), anchor="center")
+canvas.itemconfig(id_fundo_encarte, tags="sombra_global") # Ignora sombra padrão para a imagem
+ids_dots_encarte = []
+img_encarte_tk_cache = {}
+img_fundo_busca_tk_cache = {}
+
+def criar_fundo_busca(largura, altura, x, y):
+    # Agora que o motor de vidro enxerga o carrossel, podemos usar o gerar_fundo_vidro original com tranquilidade!
+    return gerar_fundo_vidro(largura, altura, x, y, raio=15)
+
+id_fundo_busca = canvas.create_image(px(40), py(700), anchor="nw") # Subiu de 740 para 700 para comportar textos mais altos
+canvas.itemconfig(id_fundo_busca, tags="sombra_global")
+
+texto_nome_produto = canvas.create_text(px(60), py(820),
                                            text="",
                                            font=("Helvetica", f(35), "bold"),
                                            fill="white",
@@ -484,25 +569,162 @@ texto_nome_produto = canvas.create_text(px(60), py(770),
                                            anchor="sw",
                                            width=px(1200))  # Quebra de linha automática
 
-texto_preco_produto = canvas.create_text(px(60), py(780),
+texto_preco_produto = canvas.create_text(px(60), py(830),
                                            text="",
                                            font=("Helvetica", f(35), "bold"),
                                            fill="#2ECC71",  # Verde esmeralda moderno
                                            justify="left",
                                            anchor="nw")
 
-id_timer_busca = None
+def carregar_encartes():
+    global lista_encartes, lista_encartes_pil
+    if EXIBIR_PROMOCOES != "S" or EXIBIR_IMAGENS_PROMOCOES != "S":
+        return
+        
+    pasta = os.path.join(os.path.dirname(CAMINHO_INI), "encartes")
+    if not os.path.exists(pasta):
+        return
+        
+    arquivos = [f for f in os.listdir(pasta) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+    arquivos.sort()
+    
+    largura = px(1320)
+    altura = py(700)
+    raio = int(20 * (largura_tela / 1920))
+    
+    nova_lista = []
+    nova_lista_pil = []
+    
+    for arq in arquivos:
+        caminho = os.path.join(pasta, arq)
+        # try:
+        img = Image.open(caminho).convert("RGBA")
+        # Crop e resize inteligente para preencher
+        img_ratio = img.width / img.height
+        target_ratio = largura / altura
+        
+        if img_ratio > target_ratio:
+            # Imagem mais larga, corta os lados
+            new_w = int(target_ratio * img.height)
+            offset = int((img.width - new_w) / 2)
+            img = img.crop((offset, 0, offset + new_w, img.height))
+        elif img_ratio < target_ratio:
+            # Imagem mais alta, corta cima/baixo
+            new_h = int(img.width / target_ratio)
+            offset = int((img.height - new_h) / 2)
+            img = img.crop((0, offset, img.width, offset + new_h))
+            
+        img = img.resize((int(largura), int(altura)), Image.LANCZOS)
+        
+        # Aplica máscara de cantos arredondados
+        mask = Image.new('L', img.size, 0)
+        draw = ImageDraw.Draw(mask)
+        draw.rounded_rectangle([(0, 0), (int(largura), int(altura))], radius=int(raio), fill=255)
+        img.putalpha(mask)
+        
+        img_tk = ImageTk.PhotoImage(img)
+        nova_lista.append(img_tk)
+        nova_lista_pil.append(img)
+        # except Exception as e:
+        #    print(f"Erro ao carregar encarte {arq}: {e}")
+            
+    lista_encartes = nova_lista
+    lista_encartes_pil = nova_lista_pil
+    if lista_encartes:
+        renderizar_encarte()
+
+def desenhar_dots():
+    for d in ids_dots_encarte:
+        canvas.delete(d)
+    ids_dots_encarte.clear()
+    
+    if len(lista_encartes) <= 1:
+        return
+        
+    total = len(lista_encartes)
+    # Largura de cada dot: ativo = 40, inativo = 10, espaçamento = 10
+    w_ativo = px(40)
+    w_inativo = px(10)
+    espaco = px(10)
+    h_dot = py(8)
+    
+    w_total = w_ativo + (total - 1) * w_inativo + (total - 1) * espaco
+    start_x = px(700) - (w_total // 2)
+    y = py(480) + py(700)//2 + py(20)
+    
+    current_x = start_x
+    for i in range(total):
+        w = w_ativo if i == indice_encarte_atual else w_inativo
+        cor = "#FF6600" if i == indice_encarte_atual else "#555555"
+        
+        # Desenha retângulo com cantos arredondados simulado por canvas line (capstyle=round) ou oval/polygon
+        # Como o canvas do Tkinter não tem rounded_rectangle, usamos line com width alto
+        # A tag sombra_global evita a sombra
+        id_dot = canvas.create_line(current_x + h_dot//2, y, current_x + w - h_dot//2, y, 
+                                    width=h_dot, fill=cor, capstyle="round", tags="sombra_global")
+        ids_dots_encarte.append(id_dot)
+        current_x += w + espaco
+        
+    # Garante que os textos da pesquisa fiquem por cima de tudo
+    canvas.tag_raise(id_fundo_busca)
+    canvas.tag_raise(texto_nome_produto)
+    canvas.tag_raise(texto_preco_produto)
+
+def renderizar_encarte():
+    if not lista_encartes:
+        canvas.itemconfig(id_fundo_encarte, image="")
+        return
+        
+    img_tk = lista_encartes[indice_encarte_atual]
+    canvas.itemconfig(id_fundo_encarte, image=img_tk)
+    img_encarte_tk_cache['atual'] = img_tk
+    desenhar_dots()
+
+def rotacionar_encarte():
+    global indice_encarte_atual
+    if EXIBIR_PROMOCOES == "S" and EXIBIR_IMAGENS_PROMOCOES == "S" and lista_encartes:
+        indice_encarte_atual = (indice_encarte_atual + 1) % len(lista_encartes)
+        renderizar_encarte()
+    janela.after(10000, rotacionar_encarte)
+
+# ----------------------------------------
 
 def limpar_busca():
     canvas.itemconfig(texto_nome_produto, text="")
     canvas.itemconfig(texto_preco_produto, text="")
+    canvas.itemconfig(id_fundo_busca, image="")
 
 def exibir_resultado(nome, valores, cor):
     global id_timer_busca
     if id_timer_busca:
         janela.after_cancel(id_timer_busca)
+        
     canvas.itemconfig(texto_nome_produto, text=nome, fill="white" if cor != "red" else "red")
     canvas.itemconfig(texto_preco_produto, text=valores, fill=cor)
+    
+    # Redimensiona a caixa de vidro de acordo com o texto
+    bbox_nome = canvas.bbox(texto_nome_produto)
+    bbox_preco = canvas.bbox(texto_preco_produto)
+    
+    if bbox_nome and bbox_preco:
+        w_max = max(bbox_nome[2] - bbox_nome[0], bbox_preco[2] - bbox_preco[0]) + px(60)
+        if w_max < px(300): w_max = px(300)
+        if w_max > px(1300): w_max = px(1300)
+        
+        top_y = min(bbox_nome[1], bbox_preco[1]) - py(20)
+        bottom_y = max(bbox_nome[3], bbox_preco[3]) + py(20)
+        h = bottom_y - top_y
+        
+        img_fundo_busca_tk_cache["fundo"] = criar_fundo_busca(w_max, h, px(30), top_y)
+        canvas.itemconfig(id_fundo_busca, image=img_fundo_busca_tk_cache["fundo"])
+        canvas.coords(id_fundo_busca, px(30), top_y)
+    else:
+        # Fallback de segurança
+        if "fundo" not in img_fundo_busca_tk_cache:
+            img_fundo_busca_tk_cache["fundo"] = criar_fundo_busca(px(1240), py(220), px(40), py(700))
+        canvas.itemconfig(id_fundo_busca, image=img_fundo_busca_tk_cache["fundo"])
+        canvas.coords(id_fundo_busca, px(40), py(700))
+        
     id_timer_busca = janela.after(5000, limpar_busca)
 
 def realizar_busca(event=None):
@@ -657,7 +879,7 @@ def focar_janela_pdv(nome_exe):
         
         if hwnd_alvo:
             ShowWindow(hwnd_alvo, 9) # SW_RESTORE
-            SetForegroundWindow(hwnd_alvo)
+            ctypes.windll.user32.SetForegroundWindow(hwnd_alvo)
             return True
     except Exception as e:
         print(f"Erro ao focar PDV: {e}")
@@ -770,7 +992,7 @@ def atualizar_texto_status():
     usuario = dados_caixa.get("usuario", "")
     
     if status == 'A':
-        texto_titulo = "CAIXA LIVRE"
+        texto_titulo = "CAIXA ABERTO"
         texto_secundario = ""
         cor = "lime"
         icone = "🔓"
@@ -825,8 +1047,8 @@ def atualizar_texto_status():
         janela.img_box_status = nova_img_status 
         canvas.itemconfig(id_fundo_status, image=nova_img_status)
         
-        # Recria a textura da caixa de atalhos (teclas adicionais se Livre)
-        status_atalhos = "aberto" if "LIVRE" in texto_titulo else "fechado"
+        # Recria a textura da caixa de atalhos (teclas adicionais se Aberto)
+        status_atalhos = "aberto" if "ABERTO" in texto_titulo else "fechado"
         nova_img_atalhos = gerar_caixa_atalhos(px(500), py(140), status_atalhos)
         janela.img_box_atalhos = nova_img_atalhos
         canvas.itemconfig(id_fundo_atalhos, image=nova_img_atalhos)
@@ -921,24 +1143,65 @@ threading.Thread(target=monitorar_fechamento_pdv, daemon=True).start()
 
 # Força a checagem do status do caixa no momento exato em que o painel é aberto pela 1ª vez
 threading.Thread(target=atualizar_texto_status, daemon=True).start()
+atualizar_tela_redes()
+
+# Inicia Carrossel
+carregar_encartes()
+janela.after(10000, rotacionar_encarte)
 
 # ------------------------------------------------------------------
 
 def atualizar_fundo_dinamico():
-    global caminho_imagem_atual, imagem_fundo_salva, id_imagem_canvas, fundo_pil_global
+    global caminho_imagem_atual, mtime_imagem_atual, imagem_fundo_salva, id_imagem_canvas, fundo_pil_global
     global id_fundo_consulta, id_fundo_atalhos, id_fundo_status, id_fundo_rodape
+    global EXIBIR_PROMOCOES, EXIBIR_IMAGENS_PROMOCOES
     
     cfg_atual = carregar_config()
+    
+    # Atualiza configurações de carrossel dinamicamente
+    nova_exibir_promocoes = cfg_atual.get("EXIBIR_PROMOCOES", "S")
+    nova_exibir_imagens = cfg_atual.get("EXIBIR_IMAGENS_PROMOCOES", "S")
+    
+    if nova_exibir_promocoes != EXIBIR_PROMOCOES or nova_exibir_imagens != EXIBIR_IMAGENS_PROMOCOES:
+        EXIBIR_PROMOCOES = nova_exibir_promocoes
+        EXIBIR_IMAGENS_PROMOCOES = nova_exibir_imagens
+        if EXIBIR_PROMOCOES == "S" and EXIBIR_IMAGENS_PROMOCOES == "S":
+            carregar_encartes()
+        else:
+            canvas.itemconfig(id_fundo_encarte, image="")
+            for d in ids_dots_encarte:
+                canvas.delete(d)
+            ids_dots_encarte.clear()
+            lista_encartes.clear()
+            lista_encartes_pil.clear()
+            
     novo_nome = cfg_atual["NOME_LOJA"].strip()
-    if novo_nome == "":
-        novo_nome = "Ganso Sistemas LTDA"
+    if not novo_nome:
+        novo_nome = "ProDesktop"
         
-    canvas.itemconfig(id_texto_loja, text=novo_nome)
+    if len(novo_nome) > 32:
+        novo_nome = novo_nome[:30] + "..."
+        
+    nome_atual_canvas = canvas.itemcget(id_texto_loja, 'text')
+    nome_loja_mudou = (novo_nome != nome_atual_canvas)
+    
+    if nome_loja_mudou:
+        canvas.itemconfig(id_texto_loja, text=novo_nome)
     
     novo_caminho = cfg_atual["IMAGEM_FUNDO"]
     
-    if novo_caminho != caminho_imagem_atual:
+    novo_mtime = 0
+    if novo_caminho and os.path.exists(novo_caminho):
+        try:
+            novo_mtime = os.path.getmtime(novo_caminho)
+        except Exception:
+            pass
+            
+    imagem_mudou = (novo_caminho != caminho_imagem_atual) or (novo_mtime != mtime_imagem_atual)
+    
+    if imagem_mudou:
         caminho_imagem_atual = novo_caminho 
+        mtime_imagem_atual = novo_mtime
         fundo_carregado = False
         if novo_caminho: 
             try:
@@ -963,16 +1226,48 @@ def atualizar_fundo_dinamico():
                 canvas.delete(id_imagem_canvas)
                 id_imagem_canvas = None
                 
-        # Regerar blocos de vidro com o novo fundo (ou sem fundo)
+    # Atualiza a loja se a imagem OU o nome mudarem
+    if imagem_mudou or nome_loja_mudou:
+        bbox_loja = canvas.bbox(id_texto_loja)
+        if bbox_loja:
+            w_loja = bbox_loja[2] - bbox_loja[0] + px(100)
+            h_loja = py(90)
+            x_loja = bbox_loja[0] - px(50)
+            y_loja = py(20)
+            if x_loja < 0: x_loja = 0
+            if x_loja + w_loja > px(1370): w_loja = px(1370) - x_loja
+        else:
+            w_loja = px(700)
+            h_loja = py(100)
+            x_loja = px(350)
+            y_loja = py(15)
+            
+        nova_img_loja = gerar_fundo_vidro(w_loja, h_loja, x=x_loja, y=y_loja, raio=20)
+        janela.img_box_loja = nova_img_loja
+        canvas.itemconfig(id_fundo_loja, image=nova_img_loja, anchor="nw")
+        canvas.coords(id_fundo_loja, x_loja, y_loja)
+        
+    # Os outros blocos só precisam ser regerados se a IMAGEM mudar
+    if imagem_mudou:
+        nova_img_relogio = gerar_fundo_vidro(px(500), py(150), x=px(1400), y=py(10), raio=15)
+        janela.img_box_relogio = nova_img_relogio
+        canvas.itemconfig(id_fundo_relogio, image=nova_img_relogio, anchor="nw")
+        canvas.coords(id_fundo_relogio, px(1400), py(10))
+        
+        nova_img_rodape_extra = gerar_fundo_vidro(px(1880), py(35), x=px(20), y=py(1038), raio=10)
+        janela.img_box_rodape_extra = nova_img_rodape_extra
+        canvas.itemconfig(id_fundo_rodape_extra, image=nova_img_rodape_extra, anchor="nw")
+        canvas.coords(id_fundo_rodape_extra, px(20), py(1038))
+        
         nova_img_consulta = gerar_caixa_consulta(px(500), py(240), x=px(1400), y=py(570))
         janela.img_box_consulta = nova_img_consulta
         canvas.itemconfig(id_fundo_consulta, image=nova_img_consulta)
         
         # Para saber se a caixa de atalhos está aberta ou fechada, checamos o status real do texto
         texto_titulo = canvas.itemcget(texto_titulo_status, 'text')
-        status_atalhos = "aberto" if "LIVRE" in texto_titulo else "fechado"
+        status_atalhos = "aberto" if "ABERTO" in texto_titulo else "fechado"
         
-        nova_img_atalhos = gerar_caixa_atalhos(px(500), py(140) if status_atalhos == "fechado" else py(240), status_atalhos, x=px(1400), y=py(410))
+        nova_img_atalhos = gerar_caixa_atalhos(px(500), py(140), status_atalhos, x=px(1400), y=py(410))
         janela.img_box_atalhos = nova_img_atalhos
         canvas.itemconfig(id_fundo_atalhos, image=nova_img_atalhos)
         
